@@ -6,6 +6,10 @@ import Course from "../models/Course.js";
 
 
 
+// =====================================================
+// CLERK WEBHOOK
+// =====================================================
+
 // API Controller Function to Manage Clerk User with database
 export const clerkWebhooks = async (req, res) => {
     try {
@@ -26,6 +30,10 @@ export const clerkWebhooks = async (req, res) => {
         // Handle different Clerk events
         switch (type) {
 
+            // =====================================================
+            // USER CREATED
+            // =====================================================
+
             case "user.created": {
 
                 const userData = {
@@ -45,6 +53,10 @@ export const clerkWebhooks = async (req, res) => {
             }
 
 
+            // =====================================================
+            // USER UPDATED
+            // =====================================================
+
             case "user.updated": {
 
                 const userData = {
@@ -62,6 +74,10 @@ export const clerkWebhooks = async (req, res) => {
             }
 
 
+            // =====================================================
+            // USER DELETED
+            // =====================================================
+
             case "user.deleted": {
 
                 await User.findByIdAndDelete(data.id);
@@ -72,6 +88,10 @@ export const clerkWebhooks = async (req, res) => {
                 });
             }
 
+
+            // =====================================================
+            // OTHER CLERK EVENTS
+            // =====================================================
 
             default:
                 return res.json({
@@ -93,10 +113,18 @@ export const clerkWebhooks = async (req, res) => {
 
 
 
+// =====================================================
+// STRIPE INITIALIZATION
+// =====================================================
+
 // Stripe Gateway Initialize
 const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
 
 
+
+// =====================================================
+// STRIPE WEBHOOK
+// =====================================================
 
 // Stripe Webhooks to Manage Payments Action
 export const stripeWebhooks = async (request, response) => {
@@ -105,7 +133,10 @@ export const stripeWebhooks = async (request, response) => {
 
     let event;
 
-    // Verify Stripe webhook signature
+    // =====================================================
+    // VERIFY STRIPE WEBHOOK SIGNATURE
+    // =====================================================
+
     try {
 
         event = stripeInstance.webhooks.constructEvent(
@@ -126,39 +157,23 @@ export const stripeWebhooks = async (request, response) => {
 
     try {
 
-        // Handle Stripe events
+        // =====================================================
+        // HANDLE STRIPE EVENTS
+        // =====================================================
+
         switch (event.type) {
 
+
             // =====================================================
-            // PAYMENT SUCCESS
+            // CHECKOUT SESSION COMPLETED
             // =====================================================
-            case "payment_intent.succeeded": {
 
-                const paymentIntent = event.data.object;
-                const paymentIntentId = paymentIntent.id;
+            case "checkout.session.completed": {
 
-                // Find the Checkout Session using Payment Intent ID
-                const sessions = await stripeInstance.checkout.sessions.list({
-                    payment_intent: paymentIntentId,
-                    limit: 1
-                });
+                const session = event.data.object;
 
-                // Make sure a Checkout Session exists
-                if (!sessions.data.length) {
-
-                    console.error(
-                        "Checkout session not found for payment:",
-                        paymentIntentId
-                    );
-
-                    return response.status(400).json({
-                        success: false,
-                        message: "Checkout session not found"
-                    });
-                }
-
-                // Get purchase ID from Checkout Session metadata
-                const purchaseId = sessions.data[0].metadata?.purchaseId;
+                // Get Purchase ID directly from Checkout Session metadata
+                const purchaseId = session.metadata?.purchaseId;
 
                 if (!purchaseId) {
 
@@ -173,8 +188,13 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // Find Purchase
-                const purchaseData = await Purchase.findById(purchaseId);
+                // =================================================
+                // FIND PURCHASE
+                // =================================================
+
+                const purchaseData = await Purchase.findById(
+                    purchaseId
+                );
 
                 if (!purchaseData) {
 
@@ -190,7 +210,11 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // If already completed, don't process again
+                // =================================================
+                // IDEMPOTENCY CHECK
+                // =================================================
+
+                // Prevent duplicate processing
                 if (purchaseData.status === "completed") {
 
                     return response.json({
@@ -200,12 +224,14 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // Find User
+                // =================================================
+                // FIND USER AND COURSE
+                // =================================================
+
                 const userData = await User.findById(
                     purchaseData.userId
                 );
 
-                // Find Course
                 const courseData = await Course.findById(
                     purchaseData.courseId
                 );
@@ -230,9 +256,12 @@ export const stripeWebhooks = async (request, response) => {
 
                 // Add course to user's enrolled courses
                 // only if not already enrolled
+
                 if (
                     !userData.enrolledCourses.some(
-                        id => id.toString() === courseData._id.toString()
+                        id =>
+                            id.toString() ===
+                            courseData._id.toString()
                     )
                 ) {
 
@@ -244,8 +273,13 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
+                // =================================================
+                // ADD USER TO COURSE STUDENTS
+                // =================================================
+
                 // Add user to course's enrolled students
                 // only if not already enrolled
+
                 if (
                     !courseData.enrolledStudents.includes(
                         userData._id
@@ -260,7 +294,10 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // Mark purchase as completed
+                // =================================================
+                // MARK PURCHASE AS COMPLETED
+                // =================================================
+
                 purchaseData.status = "completed";
 
                 await purchaseData.save();
@@ -277,16 +314,20 @@ export const stripeWebhooks = async (request, response) => {
             // =====================================================
             // PAYMENT FAILED
             // =====================================================
+
             case "payment_intent.payment_failed": {
 
                 const paymentIntent = event.data.object;
+
                 const paymentIntentId = paymentIntent.id;
 
+
                 // Find Checkout Session
-                const sessions = await stripeInstance.checkout.sessions.list({
-                    payment_intent: paymentIntentId,
-                    limit: 1
-                });
+                const sessions =
+                    await stripeInstance.checkout.sessions.list({
+                        payment_intent: paymentIntentId,
+                        limit: 1
+                    });
 
 
                 // No session found
@@ -304,8 +345,10 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // Get purchase ID
-                const purchaseId = sessions.data[0].metadata?.purchaseId;
+                // Get Purchase ID
+                const purchaseId =
+                    sessions.data[0].metadata?.purchaseId;
+
 
                 if (!purchaseId) {
 
@@ -320,10 +363,9 @@ export const stripeWebhooks = async (request, response) => {
                 }
 
 
-                // Find purchase
-                const purchaseData = await Purchase.findById(
-                    purchaseId
-                );
+                // Find Purchase
+                const purchaseData =
+                    await Purchase.findById(purchaseId);
 
 
                 if (!purchaseData) {
@@ -357,6 +399,7 @@ export const stripeWebhooks = async (request, response) => {
             // =====================================================
             // OTHER EVENTS
             // =====================================================
+
             default:
 
                 console.log(
@@ -367,10 +410,14 @@ export const stripeWebhooks = async (request, response) => {
         }
 
 
-        // Acknowledge Stripe webhook
+        // =====================================================
+        // ACKNOWLEDGE STRIPE WEBHOOK
+        // =====================================================
+
         return response.json({
             received: true
         });
+
 
     } catch (error) {
 
