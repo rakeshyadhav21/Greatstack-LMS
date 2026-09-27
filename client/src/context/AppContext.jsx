@@ -6,7 +6,7 @@ import { toast } from "react-toastify";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import humanizeDuration from "humanize-duration";
 
-const AppContext = createContext()
+export const AppContext = createContext()
 
 export const AppContextProvider = ({ children }) => {
 
