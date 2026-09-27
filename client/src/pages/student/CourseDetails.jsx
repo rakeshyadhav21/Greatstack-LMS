@@ -10,6 +10,40 @@ import YouTube from 'react-youtube';
 import { useAuth } from '@clerk/clerk-react';
 import Loading from '../../components/student/Loading';
 
+const getYouTubeVideoData = (url) => {
+  try {
+    const parsedUrl = new URL(url);
+    let videoId = "";
+
+    if (parsedUrl.hostname === "youtu.be") {
+      videoId = parsedUrl.pathname.slice(1).split("/")[0];
+    } else if (
+      parsedUrl.hostname.endsWith("youtube.com") ||
+      parsedUrl.hostname.endsWith("youtube-nocookie.com")
+    ) {
+      videoId =
+        parsedUrl.searchParams.get("v") ||
+        parsedUrl.pathname.match(
+          /\/(?:embed|shorts|live)\/([^/?]+)/
+        )?.[1] ||
+        "";
+    }
+
+    const startTime = parsedUrl.searchParams.get("t") || "0";
+    const startSeconds = parseInt(startTime, 10) || 0;
+
+    return {
+      videoId,
+      startSeconds,
+    };
+  } catch {
+    return {
+      videoId: "",
+      startSeconds: 0,
+    };
+  }
+};
+
 const CourseDetails = () => {
 
   const { id } = useParams()
@@ -145,9 +179,27 @@ const CourseDetails = () => {
                           <div className="flex items-center justify-between w-full text-gray-800 text-xs md:text-default">
                             <p>{lecture.lectureTitle}</p>
                             <div className='flex gap-2'>
-                              {lecture.isPreviewFree && <p onClick={() => setPlayerData({
-                                videoId: lecture.lectureUrl.split('/').pop()
-                              })} className='text-blue-500 cursor-pointer'>Preview</p>}
+                              {lecture.isPreviewFree && (
+                                <p
+                                  onClick={() => {
+                                    const videoData = getYouTubeVideoData(
+                                      lecture.lectureUrl
+                                    );
+
+                                    console.log("YouTube video data:", videoData);
+
+                                    if (!videoData.videoId) {
+                                      toast.error("Invalid YouTube video URL");
+                                      return;
+                                    }
+
+                                    setPlayerData(videoData);
+                                  }}
+                                  className="text-blue-500 cursor-pointer"
+                                >
+                                  Preview
+                                </p>
+                              )}
                               <p>{humanizeDuration(lecture.lectureDuration * 60 * 1000, { units: ['h', 'm'] })}</p>
                             </div>
                           </div>
